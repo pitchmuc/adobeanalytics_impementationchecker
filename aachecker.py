@@ -49,7 +49,7 @@ def __newfilename(domain):
     fday = _time.strftime("%d")
     fhour = _time.strftime("%H")
     fminute = _time.strftime("%M")
-    filename=_new_path.as_posix()+'/'+'crawl_'+domain+'_'+fmonth+'_'+fday+'_'+fhour+'_'+fminute
+    filename=domain+'_'+fmonth+'_'+fday+'_'+fhour+'_'+fminute
     return filename
 
 def __adobe_initiator():
@@ -238,7 +238,7 @@ def checker(url,counter=10,mobile=False,fast_method=True,verbose=False,export=Tr
     df1 = df.dropna(axis=1,how='all')#Clean data
     if export:
         filename = __newfilename(domain)
-        writer = _pd.ExcelWriter(filename+'.xlsx', engine='xlsxwriter')##Create engine for xlsx file
+        writer = _pd.ExcelWriter(_new_path.as_posix()+'/'+'crawl_'+filename+'.xlsx', engine='xlsxwriter')##Create engine for xlsx file
         df_summary.to_excel(writer, sheet_name='Summary',index=False)
         df1.to_excel(writer, sheet_name='Data',index=False)
         writer.save()
@@ -247,22 +247,32 @@ def checker(url,counter=10,mobile=False,fast_method=True,verbose=False,export=Tr
     return df1
 
 
-def compareFile(df1,df2):
+def compareFile(df1,df2,export=True,verbose=False):
     """ Return the difference between the first dataframe and the second dataframe in a dataframe, also columns added and columns removed.
     The base is the first parameter
     Parameters : 
         df1 : REQUIRED : dataframe, can be the output of the crawler. Use a the base. 
         df2 : REQUIRED : dataframe, can be the output of the crawler
     """
-    file_date = __newfilename()
+    url = df1['pageURL'].iat[0]
+    domain = _returnDomain(url)
+    _dict_diff ={
+            'URL compared':'',
+            '% of 1st crawl':'',
+            'New dimensions':'',
+            'Removed dimensions' : ''
+            }
     if df1.index.name is not 'pageURL':
         df1.set_index('pageURL',inplace=True)
     if df2.index.name is not 'pageURL':
         df2.set_index('pageURL',inplace=True)
     diff_cols = list(set(df1.columns) - set(df2.columns))
     df1_cols = list(df1.columns)
-    new_cols = [x for x in diff_cols if x not in df1_cols]
+    df2_cols = list(df2.columns)
+    new_cols = [x for x in df2_cols if x not in df1_cols]
+    _dict_diff['New dimensions'] = ','.join(new_cols)
     less_cols = [x for x in diff_cols if x in df1_cols]
+    _dict_diff['Removed dimensions'] = ','.join(less_cols)
     col_to_do = [x for x in df1_cols if x not in less_cols]
     new_dict = {}
     new_dict['pageURL'] = []
@@ -276,12 +286,22 @@ def compareFile(df1,df2):
                     new_dict[col].append(True)
                 else:
                     new_dict[col].append(False)
+    nb_url_done = len(new_dict['pageURL'])
+    _dict_diff['URL compared'] = nb_url_done
+    _dict_diff['% of 1st crawl'] = (nb_url_done/len(df1))*100
     df_diff = _pd.DataFrame(new_dict)
-    df_diff.to_csv(_new_path.as_posix()+'/'+'diff_'+file_date+'.csv',index=False, sep='\t')
-    with open(_new_path.as_posix()+'/'+'new_dimensions.txt','w') as nd:
-        for new in new_cols:
-            nd.writelines(new)
-    with open(_new_path.as_posix()+'/'+'remove_dimensions.txt','w') as rd:
-        for new in less_cols:
-            rd.writelines(new)
-    return df_diff, new_cols, less_cols
+    if export:
+        filename = __newfilename(domain)
+        writer = _pd.ExcelWriter(_new_path.as_posix()+'/'+'diff_'+filename+'.xlsx', engine='xlsxwriter')##Create eng
+        df_summary = _pd.DataFrame.from_dict(_dict_diff,orient='index')
+        df_summary.index.name = 'data'
+        df_summary.columns = ['summary']
+        df_summary.reset_index(inplace=True)#data frame for summary
+        df_summary.to_excel(writer, sheet_name='Summary',index=False)
+        df_diff.to_excel(writer, sheet_name='Data Diff',index=False)
+        writer.save()
+        if verbose:
+            print('your report is available on this folder '+_new_path.as_posix())
+    df1.reset_index(inplace=True)
+    df2.reset_index(inplace=True)
+    return df_diff
